@@ -11,6 +11,7 @@ Cost table loaded from config/providers.json (env override KEEL_PROVIDERS_CONFIG
 
 import json
 import os
+import time
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -108,6 +109,12 @@ class MockProvider(Provider):
 
         step = self.script[self.index]
         self.index += 1
+
+        # Bomb hook (P1.9): optional per-step delay so durability tests can
+        # SIGKILL the engine mid-provider-call, inside this sleep.
+        delay = step.get("sleep", 0)
+        if delay:
+            time.sleep(float(delay))
 
         content = step.get("content", "")
         tool_calls = step.get("tool_calls", [])

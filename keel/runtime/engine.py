@@ -55,6 +55,34 @@ class Engine:
         self.queue = Queue(self.conn)
         self.journal = Journal(self.conn)
         self.provider: Provider | None = None
+        self.repair_interrupted()
+
+    def repair_interrupted(self) -> int:
+        """Startup repair: re-queue runs stuck in `running` from a previous
+        process (crash/kill). Returns number of repaired runs."""
+        repaired = 0
+        cursor = self.conn.execute(
+            "SELECT id FROM runs WHERE status = ?", (RunStatus.RUNNING.value,)
+        )
+        for (run_id,) in cursor.fetchall():
+            run = RunState.load(self.conn, run_id)
+            if run is None:
+                continue
+            run = run.transition_to(RunStatus.PENDING, phase="requeued-after-crash")
+            run.save(self.conn)
+            # clear the stale claim marker so the queue hands it out again
+            self.conn.execute(
+                "UPDATE runs SET claimed_at = NULL WHERE id = ?", (run_id,)
+            )
+            self.conn.commit()
+            record(self.data_dir, run_id, "state_change", {
+                "from": "running", "to": "pending", "reason": "startup repair",
+            })
+            record(self.data_dir, run_id, "decision", {
+                "decision": "requeue", "reason": "interrupted run re-queued on init",
+            })
+            repaired += 1
+        return repaired
 
     def _load_agent_config(self, agent_name: str) -> dict:
         """Hand-load agents/<name>.yaml (Phase 4 replaces with inventory loader)."""
