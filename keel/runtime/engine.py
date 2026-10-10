@@ -5,21 +5,18 @@ execute tool calls → journal writes → state transitions → gate check →
 runlog everything.
 """
 
-import json
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from keel.config import load_settings
-from keel.runtime.journal import Journal, JournalOp, apply_op, rollback
+from keel.runtime.journal import Journal, JournalOp, apply_op
 from keel.runtime.providers import (
     Provider,
-    ProviderResponse,
     get_provider,
 )
 from keel.runtime.queue import Queue, QueueEntry
-from keel.runtime.runlog import record, VALID_EVENT_TYPES
+from keel.runtime.runlog import record
 from keel.runtime.state import RunState, RunStatus, init_db
 
 
@@ -73,7 +70,10 @@ class Engine:
                 "type": "function",
                 "function": {
                     "name": "db",
-                    "description": "Key-value database tool. Use 'action' to specify operation: 'read' or 'write'.",
+                    "description": (
+                        "Key-value database tool. Use 'action' to specify "
+                        "operation: 'read' or 'write'."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -101,7 +101,11 @@ class Engine:
                 result="",
                 error=f"Unknown tool: {name}",
             )
-            record(self.data_dir, run_id, "tool_result", {"name": name, "result": "", "error": result.error})
+            record(self.data_dir, run_id, "tool_result", {
+                "name": name,
+                "result": "",
+                "error": result.error,
+            })
             return result
 
         action = args.get("action")
@@ -112,13 +116,10 @@ class Engine:
             if action == "read":
                 cursor = self.conn.execute(
                     "SELECT value FROM kv_store WHERE key = ?",
-                    (key,)
+                    (key,),
                 )
                 row = cursor.fetchone()
-                if row:
-                    result_value = row[0]
-                else:
-                    result_value = ""
+                result_value = row[0] if row else ""
                 result = ToolResult(name=name, result=result_value)
 
                 # Record tool_result event
@@ -128,7 +129,7 @@ class Engine:
                 # Journal the write operation
                 cursor = self.conn.execute(
                     "SELECT value FROM kv_store WHERE key = ?",
-                    (key,)
+                    (key,),
                 )
                 row = cursor.fetchone()
                 before_value = row[0] if row else None
@@ -137,7 +138,11 @@ class Engine:
                     run_id=run_id,
                     op_type="insert_row",
                     target="kv_store",
-                    before={"key": key, "value": before_value} if before_value is not None else None,
+                    before=(
+                        {"key": key, "value": before_value}
+                        if before_value is not None
+                        else None
+                    ),
                     after={"key": key, "value": value},
                 )
                 apply_op(self.conn, self.journal, run_id, op)
@@ -145,7 +150,10 @@ class Engine:
                 result = ToolResult(name=name, result=f"Written key: {key}")
 
                 # Record tool_result event
-                record(self.data_dir, run_id, "tool_result", {"name": name, "result": f"Written key: {key}"})
+                record(self.data_dir, run_id, "tool_result", {
+                    "name": name,
+                    "result": f"Written key: {key}",
+                })
 
             else:
                 result = ToolResult(
@@ -153,11 +161,19 @@ class Engine:
                     result="",
                     error=f"Unknown db action: {action}",
                 )
-                record(self.data_dir, run_id, "tool_result", {"name": name, "result": "", "error": result.error})
+                record(self.data_dir, run_id, "tool_result", {
+                    "name": name,
+                    "result": "",
+                    "error": result.error,
+                })
 
         except Exception as e:
             result = ToolResult(name=name, result="", error=str(e))
-            record(self.data_dir, run_id, "tool_result", {"name": name, "result": "", "error": str(e)})
+            record(self.data_dir, run_id, "tool_result", {
+                "name": name,
+                "result": "",
+                "error": str(e),
+            })
 
         return result
 
@@ -197,7 +213,11 @@ class Engine:
             # Record cost event
             if response.usage.cost_usd > 0:
                 record(self.data_dir, run_id, "cost", {
-                    "model": provider.model if hasattr(provider, "model") else "unknown",
+                    "model": (
+                        provider.model
+                        if hasattr(provider, "model")
+                        else "unknown"
+                    ),
                     "cost_usd": response.usage.cost_usd,
                 })
 
@@ -211,8 +231,14 @@ class Engine:
                 if tool_result.error:
                     run = run.transition_to(RunStatus.FAILED, phase="tool_error")
                     run.save(self.conn)
-                    record(self.data_dir, run_id, "state_change", {"from": "running", "to": "failed"})
-                    record(self.data_dir, run_id, "decision", {"decision": "failed", "reason": tool_result.error})
+                    record(self.data_dir, run_id, "state_change", {
+                        "from": "running",
+                        "to": "failed",
+                    })
+                    record(self.data_dir, run_id, "decision", {
+                        "decision": "failed",
+                        "reason": tool_result.error,
+                    })
                     return run
 
             # Check if there are tool calls - if so, may need another provider call
@@ -237,8 +263,14 @@ class Engine:
             if run and run.status == RunStatus.RUNNING:
                 run = run.transition_to(RunStatus.FAILED, phase="error")
                 run.save(self.conn)
-                record(self.data_dir, run_id, "state_change", {"from": "running", "to": "failed"})
-                record(self.data_dir, run_id, "decision", {"decision": "failed", "reason": str(e)})
+                record(self.data_dir, run_id, "state_change", {
+                    "from": "running",
+                    "to": "failed",
+                })
+                record(self.data_dir, run_id, "decision", {
+                    "decision": "failed",
+                    "reason": str(e),
+                })
 
             raise EngineError(f"Run {run_id} failed: {e}") from e
 
