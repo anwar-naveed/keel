@@ -88,6 +88,9 @@ def build_parser() -> argparse.ArgumentParser:
         "verify", help="Verify audit chain integrity"
     )
 
+    # meta command
+    subparsers.add_parser("meta", help="Run the meta drift scan")
+
     # mcp command
     subparsers.add_parser("mcp", help="Start MCP server")
 
@@ -279,9 +282,56 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def cmd_cost(args: argparse.Namespace) -> int:
-    """Show cost report (Phase 2 stub)."""
-    logger.info("Cost report not implemented in Phase 1")
-    return 1
+    """Cost ledger: aggregate runlog cost per agent per day (P5.2)."""
+    from datetime import UTC, datetime, timedelta
+
+    from keel.runtime.runlog import reconstruct
+    from keel.runtime.state import RunState
+
+    engine = _get_engine()
+    cutoff = datetime.now(UTC) - timedelta(days=args.days)
+    rows: dict[str, dict[str, float]] = {}
+    total = 0.0
+    for run in RunState.list_all(engine.conn):
+        if run.agent != args.agent and args.agent:
+            continue
+        ts = run.updated_at or run.created_at
+        if not ts:
+            continue
+        try:
+            when = datetime.fromisoformat(ts)
+        except ValueError:
+            continue
+        if when < cutoff:
+            continue
+        events = reconstruct(engine.data_dir, run.run_id)
+        cost = sum(
+            e.payload.get("cost_usd", 0.0)
+            for e in events if e.type == "cost"
+        )
+        day = ts[:10]
+        rows.setdefault(run.agent, {})
+        rows[run.agent][day] = rows[run.agent].get(day, 0.0) + cost
+        total += cost
+
+    if not rows:
+        logger.info("No cost data in the last %d day(s)", args.days)
+        return 0
+
+    logger.info("Cost ledger (last %d day(s), total $%.6f):", args.days, total)
+    for agent in sorted(rows):
+        for day in sorted(rows[agent]):
+            logger.info("  %s  %s  $%.6f", day, agent, rows[agent][day])
+    return 0
+
+
+def cmd_meta(args: argparse.Namespace) -> int:
+    """Run the meta agent drift scan (P5.1)."""
+    from keel.meta.watch import run_meta_watch
+
+    engine = _get_engine()
+    logger.info("%s", run_meta_watch(engine.data_dir, engine.conn))
+    return 0
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
@@ -312,6 +362,7 @@ def main() -> int:
         "rollback": cmd_rollback,
         "eval": cmd_eval,
         "cost": cmd_cost,
+        "meta": cmd_meta,
         "audit": cmd_audit,
         "mcp": cmd_mcp,
     }
