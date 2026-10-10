@@ -10,7 +10,6 @@ from keel.runtime.engine import Engine
 from keel.runtime.runlog import reconstruct
 from keel.runtime.state import RunState, init_db
 
-
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
@@ -145,7 +144,6 @@ def cmd_show(args: argparse.Namespace) -> int:
     logger.info("Phase: %s", run.phase)
     logger.info("Created: %s", run.created_at)
     logger.info("Updated: %s", run.updated_at)
-    logger.info("Payload: %s", run.payload)
 
     # Show runlog events
     events = reconstruct(engine.data_dir, run_id)
@@ -154,7 +152,7 @@ def cmd_show(args: argparse.Namespace) -> int:
         for event in events:
             logger.info(
                 "  [%s] %s: %s",
-                event.timestamp.isoformat(),
+                event.timestamp,
                 event.type,
                 event.payload,
             )
@@ -167,14 +165,14 @@ def cmd_queue(args: argparse.Namespace) -> int:
     engine = _get_engine()
     queue = engine.queue
 
-    # Get pending
-    pending = queue.get_pending()
+    # Pending = queued, not yet claimed (FIFO head first)
+    pending = queue.list_pending()
     logger.info("Pending: %d", len(pending))
     for entry in pending:
         logger.info("  %s - %s - %s", entry.run_id, entry.agent, entry.status.value)
 
-    # Get claimed
-    claimed = queue.get_claimed()
+    # Claimed = currently held by a worker
+    claimed = queue.list_claimed()
     logger.info("Claimed: %d", len(claimed))
     for entry in claimed:
         logger.info("  %s - %s - %s", entry.run_id, entry.agent, entry.status.value)

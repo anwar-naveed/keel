@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: keel
+Version: 0.1.0
+Summary: A tiny, production-shaped agent runtime: durable by default, gated by design, evaluated before it ships.
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: fastmcp>=0.1.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: ruff>=0.6.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Dynamic: license-file
+
+# CI trigger

@@ -1,0 +1,2 @@
+[console_scripts]
+keel = keel.cli:main

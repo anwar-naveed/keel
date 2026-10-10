@@ -5,11 +5,13 @@
 
 .PHONY: test lint demo inject eval clean
 
+# PYTHONPATH=/workspace ensures the bind-mounted source wins over the
+# image's installed copy (editable in new images; belt-and-braces for old ones)
 test:
-	docker compose run --rm keel-dev pytest -q
+	docker compose run --rm -e PYTHONPATH=/workspace keel-dev pytest -q
 
 lint:
-	docker compose run --rm keel-dev ruff check .
+	docker compose run --rm -e PYTHONPATH=/workspace keel-dev ruff check .
 
 demo:
 	@echo "demo target not yet implemented (Phase 6)"

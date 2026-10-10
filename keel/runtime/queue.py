@@ -274,5 +274,54 @@ class Queue:
                 ))
         return entries
 
+    def list_claimed(self) -> list[QueueEntry]:
+        """List all entries currently claimed by a worker (claimed_at set, pending)."""
+        cursor = self.conn.execute("PRAGMA table_info(runs)")
+        columns = [row[1] for row in cursor.fetchall()]
+        has_payload = "payload" in columns
+
+        if has_payload:
+            cursor = self.conn.execute(
+                """
+                SELECT id, agent, payload, status, created_at, claimed_at
+                FROM runs
+                WHERE status = ? AND claimed_at IS NOT NULL
+                ORDER BY created_at ASC
+                """,
+                (RunStatus.PENDING.value,)
+            )
+        else:
+            cursor = self.conn.execute(
+                """
+                SELECT id, agent, status, created_at, claimed_at
+                FROM runs
+                WHERE status = ? AND claimed_at IS NOT NULL
+                ORDER BY created_at ASC
+                """,
+                (RunStatus.PENDING.value,)
+            )
+
+        entries: list[QueueEntry] = []
+        for row in cursor.fetchall():
+            if has_payload:
+                entries.append(QueueEntry(
+                    run_id=row[0],
+                    agent=row[1],
+                    payload=self._load_payload(row[0]) if row[2] else {},
+                    status=RunStatus(row[3]),
+                    created_at=row[4],
+                    claimed_at=row[5],
+                ))
+            else:
+                entries.append(QueueEntry(
+                    run_id=row[0],
+                    agent=row[1],
+                    payload={},
+                    status=RunStatus(row[2]),
+                    created_at=row[3],
+                    claimed_at=row[4],
+                ))
+        return entries
+
 
 __all__ = ["Queue", "QueueEntry"]

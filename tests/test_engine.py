@@ -1,8 +1,5 @@
 """Tests for runtime/engine.py - P1.7"""
 
-from pathlib import Path
-
-import pytest
 
 from keel.runtime.engine import Engine
 from keel.runtime.providers import MockProvider
@@ -84,7 +81,10 @@ def test_engine_run_agent_tool_call_read(tmp_path):
     """Test tool call for reading from db."""
     # Pre-populate db
     engine = Engine(data_dir=tmp_path)
-    engine.conn.execute("INSERT INTO kv_store (key, value) VALUES (?, ?)", ("existing_key", "existing_value"))
+    engine.conn.execute(
+        "INSERT INTO kv_store (key, value) VALUES (?, ?)",
+        ("existing_key", "existing_value"),
+    )
     engine.conn.commit()
 
     script_file = tmp_path / "mock_script.yaml"
@@ -180,7 +180,6 @@ def test_engine_stale_reclaim(tmp_path):
     entry = engine.queue.claim(entry.run_id)
 
     # Manually set claimed_at to old timestamp
-    import sqlite3
     from datetime import UTC, datetime, timedelta
     old_time = (datetime.now(UTC) - timedelta(minutes=20)).isoformat()
     engine.conn.execute(
