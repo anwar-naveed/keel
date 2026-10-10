@@ -1,0 +1,8 @@
+name: draft_staging
+agent: report_draft
+suite: golden
+case: "Draft the incident report for the node-7 disk alert"
+expect:
+  - state_reached: done
+  - audit_integrity: true
+  - runlog_complete: true

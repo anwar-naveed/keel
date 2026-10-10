@@ -50,3 +50,14 @@ jobs:
             exit 1
           fi
           echo "No secrets detected"
+
+  eval-gate:
+    name: Eval gate (keel eval --gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run behavioral eval gate in container
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace -e KEEL_PROVIDER=mock python:3.11-slim \
+            sh -c "pip install -e '.[dev]' && keel eval --gate"

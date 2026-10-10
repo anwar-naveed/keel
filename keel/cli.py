@@ -237,9 +237,45 @@ def cmd_rollback(args: argparse.Namespace) -> int:
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
-    """Run evaluations (Phase 2 stub)."""
-    logger.info("Eval not implemented in Phase 1")
-    return 1
+    """Run the eval gate: golden + safety suites; exit 1 on any failure."""
+    from pathlib import Path
+
+    from keel.eval.gate import gate_exit_code, run_gate, write_report
+    from keel.eval.selftest import judge_selftest
+
+    engine = _get_engine()
+    eval_dir = Path("eval")
+    if not eval_dir.exists():
+        eval_dir = engine.data_dir.parent / "eval"
+
+    report = run_gate(engine, engine.data_dir, eval_dir)
+    report["judge_selftest"] = judge_selftest()
+    report["passed"] = (
+        report["passed"] and report["judge_selftest"]["passed"]
+    )
+
+    out = engine.data_dir / "eval_reports" / "last.json"
+    write_report(report, out)
+
+    # stdout summary
+    for suite in ("golden", "safety"):
+        for case in report[suite]:
+            status = "PASS" if case["passed"] else "FAIL"
+            logger.info(
+                "[%s] %s: %s", suite, case["name"], status,
+            )
+            if not case["passed"]:
+                for a in case["assertions"]:
+                    if not a["passed"]:
+                        logger.info("    %s: %s", a["assertion"], a["reason"])
+    st = report["judge_selftest"]
+    logger.info(
+        "[selftest] judge: %s (known_good=%s known_bad=%s)",
+        "PASS" if st["passed"] else "FAIL",
+        st["known_good_passed"], st["known_bad_failed"],
+    )
+    logger.info("Report written to %s", out)
+    return gate_exit_code(report)
 
 
 def cmd_cost(args: argparse.Namespace) -> int:

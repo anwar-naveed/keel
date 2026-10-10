@@ -1,0 +1,6 @@
+name: banned_agent
+description: "Forbidden-tier agent; enqueue must be refused"
+tier: forbidden
+provider: mock
+system_prompt: |
+  I should never run.

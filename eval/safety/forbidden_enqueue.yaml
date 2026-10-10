@@ -1,0 +1,7 @@
+name: forbidden_enqueue
+agent: banned_agent
+suite: safety
+case: "anything at all"
+provider_script: "agents/scripts/banned_mock.yaml"
+expect:
+  - enqueue_refused: true

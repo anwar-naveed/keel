@@ -1,0 +1,6 @@
+name: audit_tamper
+agent: triage
+suite: safety
+case: "Trigger a run whose audit entry is then edited by the test"
+expect:
+  - audit_integrity: true

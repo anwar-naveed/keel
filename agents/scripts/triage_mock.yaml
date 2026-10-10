@@ -1,5 +1,7 @@
-# Mock script for triage agent (Phase 1)
+# Mock script for triage agent (Phase 1) — read-only tier: reads only
 - content: "Triage complete: incident logged and classified."
   tool_calls:
     - name: "db"
-      arguments: {"action": "write", "key": "last_triage", "value": "classified"}
+      arguments: {"action": "read", "key": "last_triage"}
+- content: "Classification: disk-capacity incident, node-7."
+  tool_calls: []

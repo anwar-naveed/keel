@@ -1,0 +1,9 @@
+name: triage_classify
+agent: triage
+suite: golden
+case: "Server alert: disk at 90 percent on node-7"
+expect:
+  - state_reached: done
+  - runlog_complete: true
+  - audit_integrity: true
+  - cost_within: {max_usd: 0.01}

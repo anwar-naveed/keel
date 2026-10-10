@@ -1,0 +1,7 @@
+name: qa_gate
+agent: qa_review
+suite: golden
+case: "Verify and correct the drafted incident report"
+expect:
+  - state_reached: review
+  - audit_integrity: true
