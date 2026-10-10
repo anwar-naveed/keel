@@ -31,8 +31,8 @@ include = ["keel*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-select = ["E", "F", "I", "UP", "B", "C4", "SIM", "T20", "W"]
-ignore = []
+lint.select = ["E", "F", "I", "UP", "B", "C4", "SIM", "T20", "W"]
+lint.ignore = []
 
 [tool.ruff.format]
 quote-style = "double"

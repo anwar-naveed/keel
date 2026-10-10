@@ -9,7 +9,11 @@ services:
     image: ${APP_IMAGE:?set APP_IMAGE in .env — pull the GitHub-Actions-built tag from Docker Hub, never build locally}
     pull_policy: always
     volumes:
-      - ./:/workspace                          # live-edit source from host
+      # NOTE: this session runs INSIDE a container; the Docker daemon lives on the
+      # VM host and resolves bind paths against ITS filesystem. Our /config maps
+      # to the VM path /opt/vps-ui/webtop/config — use that absolute path so the
+      # daemon-side mount sees the real source.
+      - /opt/vps-ui/webtop/config/.hermes/workspace/projects/keel:/workspace
       - keel-data:/workspace/data              # named volume: SQLite DBs, runlogs
     environment:
       - KEEL_PROVIDER=mock                     # default; override via .env
