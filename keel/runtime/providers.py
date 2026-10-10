@@ -129,7 +129,11 @@ class OllamaProvider(Provider):
             or os.getenv("KEEL_OLLAMA_URL")
             or config.get("base_url", "http://ollama:11434")
         )
-        self.model = model or os.getenv("KEEL_OLLAMA_MODEL") or config.get("default_model", "llama3.1:8b")
+        self.model = (
+            model
+            or os.getenv("KEEL_OLLAMA_MODEL")
+            or config.get("default_model", "llama3.1:8b")
+        )
         self._cost_table = config.get("models", {})
 
     def complete(
@@ -180,8 +184,16 @@ class OpenAIProvider(Provider):
             raise ProviderNotConfigured("OPENAI_API_KEY not set")
 
         config = _load_provider_config("openai")
-        self.model = model or os.getenv("KEEL_OPENAI_MODEL") or config.get("default_model", "gpt-4o-mini")
-        self.base_url = base_url or os.getenv("KEEL_OPENAI_BASE_URL") or config.get("base_url", "https://api.openai.com/v1")
+        self.model = (
+            model
+            or os.getenv("KEEL_OPENAI_MODEL")
+            or config.get("default_model", "gpt-4o-mini")
+        )
+        self.base_url = (
+            base_url
+            or os.getenv("KEEL_OPENAI_BASE_URL")
+            or config.get("base_url", "https://api.openai.com/v1")
+        )
         self._cost_table = config.get("models", {})
 
     def _calculate_cost(self, tokens_in: int, tokens_out: int) -> float:
@@ -240,7 +252,9 @@ class OpenAIProvider(Provider):
         return ProviderResponse(
             content=content,
             tool_calls=tool_calls,
-            usage=Usage(tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost),
+            usage=Usage(
+                tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost
+            ),
         )
 
 
@@ -253,8 +267,16 @@ class AnthropicProvider(Provider):
             raise ProviderNotConfigured("ANTHROPIC_API_KEY not set")
 
         config = _load_provider_config("anthropic")
-        self.model = model or os.getenv("KEEL_ANTHROPIC_MODEL") or config.get("default_model", "claude-3-5-sonnet-20241022")
-        self.base_url = base_url or os.getenv("KEEL_ANTHROPIC_BASE_URL") or config.get("base_url", "https://api.anthropic.com/v1")
+        self.model = (
+            model
+            or os.getenv("KEEL_ANTHROPIC_MODEL")
+            or config.get("default_model", "claude-3-5-sonnet-20241022")
+        )
+        self.base_url = (
+            base_url
+            or os.getenv("KEEL_ANTHROPIC_BASE_URL")
+            or config.get("base_url", "https://api.anthropic.com/v1")
+        )
         self._cost_table = config.get("models", {})
 
     def _calculate_cost(self, tokens_in: int, tokens_out: int) -> float:
@@ -327,7 +349,9 @@ class AnthropicProvider(Provider):
         return ProviderResponse(
             content=content,
             tool_calls=tool_calls,
-            usage=Usage(tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost),
+            usage=Usage(
+                tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost
+            ),
         )
 
 

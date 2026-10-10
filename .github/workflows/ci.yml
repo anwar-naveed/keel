@@ -24,7 +24,7 @@ jobs:
       - name: Run ruff check in container
         run: |
           docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace python:3.11-slim \
-            sh -c "pip install ruff && ruff check ."
+            sh -c "pip install -e '.[dev]' && ruff check ."
 
   test:
     name: Test (pytest)
@@ -35,7 +35,7 @@ jobs:
       - name: Run pytest in container
         run: |
           docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace -e KEEL_PROVIDER=mock python:3.11-slim \
-            sh -c "pip install pytest pyyaml fastmcp && pytest -q"
+            sh -c "pip install -e '.[dev]' && pytest -q"
 
   secret-scan:
     name: Secret scan
