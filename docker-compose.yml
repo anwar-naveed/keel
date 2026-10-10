@@ -1,0 +1,32 @@
+# docker-compose.yml (committed; no secrets)
+# OPenship contract (see .github/workflows/build-image.yml): images are BUILT BY
+# GITHUB ACTIONS and pushed to Docker Hub (navanwar021/work-repo:keel-dev-*).
+# NEVER `docker compose build` / `up --build` on this host — the local host only
+# PULLS the CI-built image. APP_IMAGE comes from .env; the CI workflow prints the
+# new tag in its run summary after every push.
+services:
+  keel-dev:
+    image: ${APP_IMAGE:?set APP_IMAGE in .env — pull the GitHub-Actions-built tag from Docker Hub, never build locally}
+    pull_policy: always
+    volumes:
+      - ./:/workspace                          # live-edit source from host
+      - keel-data:/workspace/data              # named volume: SQLite DBs, runlogs
+    environment:
+      - KEEL_PROVIDER=mock                     # default; override via .env
+      - PIP_NO_CACHE_DIR=1
+    command: sleep infinity                    # entered via docker compose exec
+
+  # DISABLED ON THIS HOST — no local GPU, so local-model inference via Ollama
+  # cannot be tested here. Kept commented so anyone WITH a GPU can uncomment
+  # and get real-model runs in one step; the ollama provider adapter still ships
+  # in the code and is covered by unit tests with mocked HTTP.
+  # To enable (GPU host): uncomment the block below and run
+  #   docker compose exec ollama ollama pull llama3.1:8b
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   volumes: [keel-ollama:/root/.ollama]
+  #   # deploy: { resources: { reservations: { devices: [{driver: nvidia, count: 1, capabilities: [gpu]}] } } }
+
+volumes:
+  keel-data: {}
+  # keel-ollama: {}                            # uncomment together with the ollama service

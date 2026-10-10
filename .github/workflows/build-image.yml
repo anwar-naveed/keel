@@ -1,0 +1,74 @@
+# build-image.yml
+# Builds the keel dev image on a GitHub-hosted runner, pushes it to Docker Hub.
+# Repository secret required: DOCKERHUB_TOKEN (Docker Hub access token with write access)
+name: build-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'keel/**'
+      - 'agents/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+  workflow_dispatch:
+
+# One release at a time so two runs never race
+concurrency:
+  group: build-image
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_REPO: navanwar021/work-repo
+  DOCKERHUB_USER: navanwar021
+  TAG_PREFIX: keel-dev
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute tag
+        id: cfg
+        run: |
+          set -eu
+          [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ] || { echo "::error::DOCKERHUB_TOKEN secret is not set"; exit 1; }
+          echo "tag=${TAG_PREFIX}-$(date -u +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          target: dev
+          tags: ${{ env.IMAGE_REPO }}:${{ steps.cfg.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the built image on the runner (host stays clean)
+        run: |
+          set -eu
+          docker run --rm "${IMAGE_REPO}:${{ steps.cfg.outputs.tag }}" keel --help
+
+      - name: Publish tag to summary
+        run: |
+          echo "## Built image tag" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${IMAGE_REPO}:${{ steps.cfg.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Set it in your local .env as:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "APP_IMAGE=${IMAGE_REPO}:${{ steps.cfg.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

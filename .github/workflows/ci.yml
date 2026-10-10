@@ -1,0 +1,52 @@
+# ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ruff check in container
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace python:3.11-slim \
+            sh -c "pip install -e '.[dev]' && ruff check ."
+
+  test:
+    name: Test (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run pytest in container
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace -e KEEL_PROVIDER=mock python:3.11-slim \
+            sh -c "pip install -e '.[dev]' && pytest -q"
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for secrets
+        run: |
+          if grep -rE "(sk-[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})" --exclude-dir=.git --exclude="*.log" .; then
+            echo "::error::Potential secret found in repository"
+            exit 1
+          fi
+          echo "No secrets detected"
