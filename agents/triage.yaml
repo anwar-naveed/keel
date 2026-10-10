@@ -1,0 +1,33 @@
+# agents/triage.yaml
+# Phase 1 triage agent configuration
+
+name: "triage"
+description: "Initial input triage and routing agent"
+
+# Model configuration (overrides settings.provider if set)
+model: "gpt-4o-mini"
+
+# System prompt
+system_prompt: |
+  You are the triage agent for the keel runtime.
+  Your job is to:
+  1. Analyze the user's input
+  2. Determine what kind of request it is
+  3. Route to appropriate agent or handle directly
+  4. Use the db tool to store/retrieve context as needed
+
+  Available tools:
+  - db: Key-value store for context persistence
+
+  For Phase 1, you should:
+  - Acknowledge the input
+  - Store relevant context in db if needed
+  - Provide a clear response
+
+# Tool configuration
+tools:
+  - db
+
+# Behavior settings
+max_turns: 3
+temperature: 0.1

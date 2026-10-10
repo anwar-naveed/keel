@@ -2,6 +2,13 @@
 
 import argparse
 import sys
+from pathlib import Path
+
+from keel.config import load_settings
+from keel.runtime.engine import Engine
+from keel.runtime.queue import Queue
+from keel.runtime.runlog import reconstruct
+from keel.runtime.state import RunState, init_db
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,15 +91,154 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _get_engine(data_dir: Path | None = None) -> Engine:
+    """Get engine instance with settings."""
+    settings = load_settings()
+    if data_dir is None:
+        data_dir = settings.data_dir
+    return Engine(data_dir=data_dir)
+
+
+def _get_latest_run_id(data_dir: Path) -> str | None:
+    """Get the latest run ID from the database."""
+    db_path = data_dir / "keel.db"
+    if not db_path.exists():
+        return None
+    conn = init_db(db_path)
+    cursor = conn.execute(
+        "SELECT id FROM runs ORDER BY created_at DESC LIMIT 1"
+    )
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """Run an agent."""
+    engine = _get_engine()
+    run = engine.run_agent(args.agent, args.input)
+    print(f"Run {run.run_id} completed with status: {run.status.value}")
+    if run.status.value == "failed":
+        return 1
+    return 0
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    """Show run details."""
+    engine = _get_engine()
+    run_id = args.run_id or _get_latest_run_id(engine.data_dir)
+    if run_id is None:
+        print("No runs found", file=sys.stderr)
+        return 1
+
+    run = RunState.load(engine.conn, run_id)
+    if run is None:
+        print(f"Run {run_id} not found", file=sys.stderr)
+        return 1
+
+    print(f"Run ID: {run.run_id}")
+    print(f"Agent: {run.agent}")
+    print(f"Status: {run.status.value}")
+    print(f"Phase: {run.phase}")
+    print(f"Created: {run.created_at}")
+    print(f"Updated: {run.updated_at}")
+    print(f"Payload: {run.payload}")
+
+    # Show runlog events
+    events = reconstruct(engine.data_dir, run_id)
+    if events:
+        print("\n--- Events ---")
+        for event in events:
+            print(f"  [{event.timestamp.isoformat()}] {event.type}: {event.payload}")
+
+    return 0
+
+
+def cmd_queue(args: argparse.Namespace) -> int:
+    """Show queue status."""
+    engine = _get_engine()
+    queue = engine.queue
+
+    # Get pending
+    pending = queue.get_pending()
+    print(f"Pending: {len(pending)}")
+    for entry in pending:
+        print(f"  {entry.run_id} - {entry.agent} - {entry.status.value}")
+
+    # Get claimed
+    claimed = queue.get_claimed()
+    print(f"Claimed: {len(claimed)}")
+    for entry in claimed:
+        print(f"  {entry.run_id} - {entry.agent} - {entry.status.value}")
+
+    return 0
+
+
+def cmd_approve(args: argparse.Namespace) -> int:
+    """Approve a staged run (Phase 2 stub)."""
+    print(f"Approve not implemented in Phase 1: {args.run_id}")
+    return 1
+
+
+def cmd_reject(args: argparse.Namespace) -> int:
+    """Reject a staged run (Phase 2 stub)."""
+    print(f"Reject not implemented in Phase 1: {args.run_id}")
+    return 1
+
+
+def cmd_rollback(args: argparse.Namespace) -> int:
+    """Rollback a run (Phase 2 stub)."""
+    print(f"Rollback not implemented in Phase 1: {args.run_id}")
+    return 1
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    """Run evaluations (Phase 2 stub)."""
+    print("Eval not implemented in Phase 1")
+    return 1
+
+
+def cmd_cost(args: argparse.Namespace) -> int:
+    """Show cost report (Phase 2 stub)."""
+    print("Cost report not implemented in Phase 1")
+    return 1
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    """Audit operations (Phase 2 stub)."""
+    print("Audit not implemented in Phase 1")
+    return 1
+
+
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """Start MCP server (Phase 2 stub)."""
+    print("MCP server not implemented in Phase 1")
+    return 1
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    # Command implementations land in later phases; all are accepted
-    # and acknowledged for now.
-    _ = args
+    # Dispatch to command handler
+    handlers = {
+        "run": cmd_run,
+        "show": cmd_show,
+        "queue": cmd_queue,
+        "approve": cmd_approve,
+        "reject": cmd_reject,
+        "rollback": cmd_rollback,
+        "eval": cmd_eval,
+        "cost": cmd_cost,
+        "audit": cmd_audit,
+        "mcp": cmd_mcp,
+    }
 
-    return 0
+    handler = handlers.get(args.command)
+    if handler:
+        return handler(args)
+
+    parser.print_help()
+    return 1
 
 
 if __name__ == "__main__":
