@@ -249,7 +249,7 @@ def test_anthropic_custom_pricing(monkeypatch, tmp_path):
     assert cost == 0.0125
 
 
-def test_unknown_model_cost_zero(monkeypatch, tmp_path, caplog):
+def test_unknown_model_cost_zero(monkeypatch, tmp_path):
     """Test unknown model returns 0.0 cost with warning."""
     config_file = tmp_path / "providers.json"
     config_file.write_text("""
@@ -269,8 +269,9 @@ def test_unknown_model_cost_zero(monkeypatch, tmp_path, caplog):
     provider = OpenAIProvider(model="unknown-model")
     cost = provider._calculate_cost(1000, 500)
     assert cost == 0.0
-    # Check warning was logged
-    assert "Unknown model" in caplog.text
+    # Check warning was issued (pytest captures warnings)
+    with pytest.warns(UserWarning, match="Unknown model"):
+        provider._calculate_cost(1000, 500)
 
 
 def test_load_providers_config(tmp_path):

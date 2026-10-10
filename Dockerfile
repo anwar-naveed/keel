@@ -5,6 +5,7 @@ COPY keel/ ./keel/
 COPY tests/ ./tests/
 COPY agents/ ./agents/
 COPY eval/ ./eval/
+COPY config/ ./config/
 RUN pip install --no-cache-dir ".[dev]"
 COPY . .
 CMD ["sleep", "infinity"]
