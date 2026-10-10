@@ -157,7 +157,7 @@ def _parse_ts(ts: str) -> datetime:
 
 
 def _parse_day(day: str) -> datetime:
-    return datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC)  # noqa: SIM
+    return datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC)
 
 
 def run_meta_watch(data_dir: Path, conn) -> str:
