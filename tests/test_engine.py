@@ -54,8 +54,14 @@ def test_engine_run_agent_with_tool_call(tmp_path):
 
     engine = Engine(data_dir=tmp_path)
     engine.provider = MockProvider(script_path=script_file)
+    # Phase 2 contract: writes stage, so the agent must hold a writing tier
+    engine._load_agent_config = lambda agent: {  # noqa: SLF001
+        "provider": "mock",
+        "system_prompt": "You draft.",
+        "tier": "draft",
+    }
 
-    run = engine.run_agent("triage", "Test input with tool")
+    run = engine.run_agent("report_draft", "Test input with tool")
 
     assert run is not None
     assert run.status.value == "done"
@@ -74,7 +80,7 @@ def test_engine_run_agent_with_tool_call(tmp_path):
 
     tool_result_event = next(e for e in events if e.type == "tool_result")
     assert tool_result_event.payload["name"] == "db"
-    assert "Written key" in tool_result_event.payload["result"]
+    assert "Staged key" in tool_result_event.payload["result"]
 
 
 def test_engine_run_agent_tool_call_read(tmp_path):
@@ -227,14 +233,25 @@ def test_engine_journal_records_tool_writes(tmp_path):
 
     engine = Engine(data_dir=tmp_path)
     engine.provider = MockProvider(script_path=script_file)
+    # write_with_approval: staged, then applied via review approve (journaled)
+    engine._load_agent_config = lambda agent: {  # noqa: SLF001
+        "provider": "mock",
+        "system_prompt": "You QA.",
+        "tier": "write_with_approval",
+    }
 
-    run = engine.run_agent("triage", "Test journal")
-
+    run = engine.run_agent("qa_review", "Test journal")
     assert run is not None
+    assert run.status.value == "review"  # staged writes hold for review
+
+    # Approve through the review gate -> applies staged ops through the journal
+    from keel.governance.audit import AuditLog
+    from keel.governance.review import approve
+    approved = approve(engine.conn, engine.journal, tmp_path, run.run_id, AuditLog(engine.conn))
+    assert approved.status.value == "done"
 
     # Check journal has the operation
     ops = engine.journal.get_ops(run.run_id)
-    assert len(ops) >= 1
     insert_ops = [op for op in ops if op.op_type == "insert_row"]
     assert len(insert_ops) == 1
     assert insert_ops[0].after["key"] == "journal_test"
@@ -255,8 +272,13 @@ def test_engine_multiple_tool_calls(tmp_path):
 
     engine = Engine(data_dir=tmp_path)
     engine.provider = MockProvider(script_path=script_file)
+    engine._load_agent_config = lambda agent: {  # noqa: SLF001
+        "provider": "mock",
+        "system_prompt": "You draft.",
+        "tier": "draft",
+    }
 
-    run = engine.run_agent("triage", "Test multiple tools")
+    run = engine.run_agent("report_draft", "Test multiple tools")
 
     assert run is not None
     assert run.status.value == "done"
@@ -268,7 +290,12 @@ def test_engine_multiple_tool_calls(tmp_path):
     assert len(tool_call_events) == 2
     assert len(tool_result_events) == 2
 
-    # Check both writes were journaled
-    ops = engine.journal.get_ops(run.run_id)
-    insert_ops = [op for op in ops if op.op_type == "insert_row"]
-    assert len(insert_ops) == 2
+    # Phase 2 contract: draft-tier writes STAGE (not journal-apply).
+    # Both writes must be in staging, kv_store untouched.
+    staged = engine.conn.execute(
+        "SELECT key, value FROM staging WHERE run_id = ? ORDER BY id",
+        (run.run_id,),
+    ).fetchall()
+    assert len(staged) == 2
+    assert staged[0] == ("key1", "value1")
+    assert staged[1] == ("key2", "value2")

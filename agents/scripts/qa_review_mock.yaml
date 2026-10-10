@@ -1,0 +1,7 @@
+# Mock script: QA correction (staged; applied on keel approve)
+- content: "Reviewing report; staging correction."
+  tool_calls:
+    - name: "db"
+      arguments: {"action": "write", "key": "report_final", "value": "incident v2 (approved)"}
+- content: "Correction staged for approval."
+  tool_calls: []

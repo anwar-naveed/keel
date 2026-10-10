@@ -1,0 +1,7 @@
+# Mock script: drafts the report (staged, not applied)
+- content: "Drafting incident report."
+  tool_calls:
+    - name: "db"
+      arguments: {"action": "write", "key": "report_draft", "value": "incident v1"}
+- content: "Report drafted and staged."
+  tool_calls: []

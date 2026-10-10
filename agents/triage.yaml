@@ -1,35 +1,15 @@
-# agents/triage.yaml
-# Phase 1 triage agent configuration
-
+# agents/triage.yaml — read_only tier demo agent
 name: "triage"
 description: "Initial input triage and routing agent"
-
-# Model configuration (overrides settings.provider if set)
+tier: "read_only"
 provider: "mock"
 model: "mock-1"
 script: "agents/scripts/triage_mock.yaml"
-
-# System prompt
 system_prompt: |
   You are the triage agent for the keel runtime.
-  Your job is to:
-  1. Analyze the user's input
-  2. Determine what kind of request it is
-  3. Route to appropriate agent or handle directly
-  4. Use the db tool to store/retrieve context as needed
-
-  Available tools:
-  - db: Key-value store for context persistence
-
-  For Phase 1, you should:
-  - Acknowledge the input
-  - Store relevant context in db if needed
-  - Provide a clear response
-
-# Tool configuration
+  Analyze the incoming report, classify it, and look up any prior context
+  in the key-value store. You can READ context but you cannot write:
+  your tier is read_only, so writing is structurally impossible.
 tools:
   - db
-
-# Behavior settings
 max_turns: 3
-temperature: 0.1

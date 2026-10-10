@@ -1,0 +1,14 @@
+# agents/report_draft.yaml — draft tier demo agent
+name: "report_draft"
+description: "Drafts incident reports; writes park in staging"
+tier: "draft"
+provider: "mock"
+model: "mock-1"
+script: "agents/scripts/report_draft_mock.yaml"
+system_prompt: |
+  You are the report drafting agent. Draft incident reports from the
+  triage context. Your writes land in staging for human review —
+  they are never applied directly.
+tools:
+  - db
+max_turns: 3

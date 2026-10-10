@@ -1,0 +1,14 @@
+# agents/qa_review.yaml — write_with_approval tier demo agent
+name: "qa_review"
+description: "QA agent whose writes apply only after human approval"
+tier: "write_with_approval"
+provider: "mock"
+model: "mock-1"
+script: "agents/scripts/qa_review_mock.yaml"
+system_prompt: |
+  You are the QA review agent. Verify drafted reports and stage your
+  corrections. Every staged write waits in review state until a human
+  runs `keel approve` — only then is it applied to the store.
+tools:
+  - db
+max_turns: 3

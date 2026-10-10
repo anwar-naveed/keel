@@ -181,21 +181,59 @@ def cmd_queue(args: argparse.Namespace) -> int:
 
 
 def cmd_approve(args: argparse.Namespace) -> int:
-    """Approve a staged run (Phase 2 stub)."""
-    logger.info("Approve not implemented in Phase 1: %s", args.run_id)
-    return 1
+    """Approve a run in review: apply staged writes (journaled), go done."""
+    from keel.governance.review import NotInReviewError
+    from keel.governance.review import approve as review_approve
+
+    engine = _get_engine()
+    try:
+        run = review_approve(
+            engine.conn, engine.journal, engine.data_dir,
+            args.run_id, engine.audit,
+        )
+    except NotInReviewError as e:
+        logger.error("%s", e)
+        return 1
+    logger.info("Run %s approved -> %s", run.run_id, run.status.value)
+    return 0
 
 
 def cmd_reject(args: argparse.Namespace) -> int:
-    """Reject a staged run (Phase 2 stub)."""
-    logger.info("Reject not implemented in Phase 1: %s", args.run_id)
-    return 1
+    """Reject a run in review: drop staged writes, rolled_back."""
+    from keel.governance.review import NotInReviewError
+    from keel.governance.review import reject as review_reject
+
+    engine = _get_engine()
+    try:
+        run = review_reject(
+            engine.conn, engine.data_dir, args.run_id, engine.audit,
+        )
+    except NotInReviewError as e:
+        logger.error("%s", e)
+        return 1
+    logger.info("Run %s rejected -> %s", run.run_id, run.status.value)
+    return 0
 
 
 def cmd_rollback(args: argparse.Namespace) -> int:
-    """Rollback a run (Phase 2 stub)."""
-    logger.info("Rollback not implemented in Phase 1: %s", args.run_id)
-    return 1
+    """Rollback a run: reverse-replay its journaled ops."""
+    from keel.runtime.journal import rollback as journal_rollback
+    from keel.runtime.state import RunStatus
+
+    engine = _get_engine()
+    run = RunState.load(engine.conn, args.run_id)
+    if run is None:
+        logger.error("Run %s not found", args.run_id)
+        return 1
+    if run.status not in (RunStatus.FAILED, RunStatus.ROLLED_BACK, RunStatus.REVIEW):
+        logger.error(
+            "Run %s is %s; rollback applies to failed/review/rolled_back runs",
+            args.run_id, run.status.value,
+        )
+        return 1
+    n = journal_rollback(engine.conn, engine.journal, args.run_id)
+    logger.info("Run %s rolled back: %d op(s) reversed", args.run_id, n)
+    return 0
 
 
 def cmd_eval(args: argparse.Namespace) -> int:

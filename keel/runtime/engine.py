@@ -11,6 +11,10 @@ from pathlib import Path
 import yaml
 
 from keel.config import load_settings
+from keel.governance.audit import AuditLog
+from keel.governance.capabilities import build_tool_for_tier
+from keel.governance.tiers import ForbiddenAgentError, tier_for
+from keel.governance.tiers import Tier as GovernanceTier
 from keel.runtime.journal import Journal, JournalOp, apply_op
 from keel.runtime.providers import (
     Provider,
@@ -54,6 +58,20 @@ class Engine:
         self.conn = init_db(self.db_path)
         self.queue = Queue(self.conn)
         self.journal = Journal(self.conn)
+        self.audit = AuditLog(self.conn)
+        # ensure staging table exists from the start (review gate reads it)
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS staging (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                staged_at TEXT NOT NULL
+            )
+            """
+        )
+        self.conn.commit()
         self.provider: Provider | None = None
         self.repair_interrupted()
 
@@ -240,6 +258,69 @@ class Engine:
 
         return result
 
+    def _execute_capability_call(self, run_id: str, tool, tool_call: dict) -> ToolResult:
+        """Execute one tool call through the capability object (P2.2).
+
+        The structural boundary: only methods the tier granted exist on the
+        tool object. An injected `write` on a read-only tool raises
+        AttributeError here — journaled as a failed tool call, run fails.
+        """
+        name = tool_call.get("name", "")
+        args = tool_call.get("arguments", {})
+        record(self.data_dir, run_id, "tool_call", {"name": name, "arguments": args})
+
+        try:
+            if name == "db":
+                action = args.get("action")
+                key = args.get("key", "")
+                value = args.get("value", "")
+                if action == "read":
+                    out = tool.select(key)
+                elif action == "write":
+                    # Structural gate: read_only has no stage_write;
+                    # draft/write_with_approval park the write in staging.
+                    out = tool.stage_write(key, value)
+                    out = f"Staged key: {key} (awaiting review)"
+                else:
+                    out = ""
+                    result = ToolResult(name=name, result="", error=f"Unknown db action: {action}")
+                    record(self.data_dir, run_id, "tool_result", {
+                        "name": name, "result": "", "error": result.error,
+                    })
+                    return result
+                result = ToolResult(name=name, result=str(out))
+            else:
+                result = ToolResult(name=name, result="", error=f"Unknown tool: {name}")
+            record(self.data_dir, run_id, "tool_result", {
+                "name": name,
+                "result": result.result,
+                **({"error": result.error} if result.error else {}),
+            })
+        except AttributeError as e:
+            # The impossible write: tier never granted this capability.
+            result = ToolResult(
+                name=name, result="",
+                error=f"capability denied (structurally): {e}",
+            )
+            record(self.data_dir, run_id, "tool_result", {
+                "name": name, "result": "",
+                "error": f"capability denied (structurally): {e}",
+            })
+            record(self.data_dir, run_id, "decision", {
+                "decision": "tool_denied",
+                "reason": f"method '{name}' not on capability object for tier",
+            })
+            self.audit.append(
+                actor="engine", action="tool_denied", run_id=run_id,
+                detail=f"{name}: {e}",
+            )
+        except Exception as e:
+            result = ToolResult(name=name, result="", error=str(e))
+            record(self.data_dir, run_id, "tool_result", {
+                "name": name, "result": "", "error": str(e),
+            })
+        return result
+
     def _process_run(self, entry: QueueEntry) -> RunState:
         """Process a single run from claim to completion."""
         run_id = entry.run_id
@@ -270,6 +351,10 @@ class Engine:
         # Record prompt event
         record(self.data_dir, run_id, "prompt", {"content": messages[-1]["content"]})
 
+        # Build the capability-constrained tool object for this run's tier (P2.2/P2.5)
+        tier_name = agent_cfg.get("tier", "read_only")
+        tool = build_tool_for_tier(tier_name, self.conn, run_id, self.journal)
+
         try:
             # Call provider
             response = provider.complete(system_prompt, messages, tools)
@@ -288,10 +373,12 @@ class Engine:
                     "cost_usd": response.usage.cost_usd,
                 })
 
-            # Execute tool calls
+            # Execute tool calls through the capability object
             tool_results = []
             for tool_call in response.tool_calls:
-                tool_result = self._execute_tool_call(run_id, tool_call)
+                tool_result = self._execute_capability_call(
+                    run_id, tool, tool_call
+                )
                 tool_results.append(tool_result)
 
                 # If tool failed, mark run as failed
@@ -314,13 +401,38 @@ class Engine:
                 # Could do another iteration here, but Phase 1 keeps it simple
                 pass
 
-            # Determine final state
-            # If no tool calls or all successful, transition to done (Phase 1: no review gate)
+            # Gate check (P2.3): write_with_approval runs with staged writes
+            # hold in REVIEW for human approve/reject; everything else completes.
+            tier_name = agent_cfg.get("tier", "read_only")
+            staged_cursor = self.conn.execute(
+                "SELECT COUNT(*) FROM staging WHERE run_id = ?", (run_id,)
+            )
+            has_staged = staged_cursor.fetchone()[0] > 0
+
+            if tier_for(tier_name) == GovernanceTier.WRITE_WITH_APPROVAL and has_staged:
+                run = run.transition_to(RunStatus.REVIEW, phase="staged-writes")
+                run.save(self.conn)
+                record(self.data_dir, run_id, "state_change", {
+                    "from": "running", "to": "review",
+                })
+                record(self.data_dir, run_id, "decision", {
+                    "decision": "hold_for_review",
+                    "reason": "staged writes require approval",
+                })
+                self.audit.append(
+                    actor="engine", action="held_for_review", run_id=run_id,
+                    detail=f"{has_staged and 'staged write(s) awaiting approval'}",
+                )
+                return run
+
             run = run.transition_to(RunStatus.DONE, phase="completed")
             run.save(self.conn)
 
             record(self.data_dir, run_id, "state_change", {"from": "running", "to": "done"})
             record(self.data_dir, run_id, "decision", {"decision": "completed"})
+            self.audit.append(
+                actor="engine", action="run_completed", run_id=run_id,
+            )
 
             return run
 
@@ -372,7 +484,19 @@ class Engine:
         return results
 
     def run_agent(self, agent: str, input_text: str) -> RunState:
-        """Enqueue and process a single agent run synchronously."""
+        """Enqueue and process a single agent run synchronously.
+
+        Enqueue gate (P2.1): forbidden-tier agents are refused at queue
+        entry; the error names the tier.
+        """
+        agent_cfg = self._load_agent_config(agent)
+        tier_name = agent_cfg.get("tier", "read_only")
+        if tier_for(tier_name) == GovernanceTier.FORBIDDEN:
+            self.audit.append(
+                actor="queue", action="enqueue_refused", run_id=None,
+                detail=f"agent '{agent}' tier 'forbidden' cannot be enqueued",
+            )
+            raise ForbiddenAgentError(agent)
         entry = self.queue.enqueue(agent, {"input": input_text})
         # Claim the run (transitions PENDING -> RUNNING)
         entry = self.queue.claim(entry.run_id)
