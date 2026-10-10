@@ -178,7 +178,12 @@ class OllamaProvider(Provider):
 class OpenAIProvider(Provider):
     """OpenAI provider using stdlib urllib."""
 
-    def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+    ):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise ProviderNotConfigured("OPENAI_API_KEY not set")
@@ -261,7 +266,12 @@ class OpenAIProvider(Provider):
 class AnthropicProvider(Provider):
     """Anthropic provider using stdlib urllib."""
 
-    def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+    ):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
             raise ProviderNotConfigured("ANTHROPIC_API_KEY not set")
