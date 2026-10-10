@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from keel.config import ConfigError, load_providers_config
 from keel.runtime.providers import (
-    COST_TABLE,
     PROVIDER_REGISTRY,
     AnthropicProvider,
     MockProvider,
@@ -116,19 +116,195 @@ def test_anthropic_provider_not_configured(monkeypatch):
         AnthropicProvider()
 
 
-def test_cost_table_exists():
-    """Test that cost table has entries for all providers."""
-    assert "mock" in COST_TABLE
-    assert "ollama" in COST_TABLE
-    assert "openai" in COST_TABLE
-    assert "anthropic" in COST_TABLE
+def test_ollama_provider_custom_base_url(monkeypatch, tmp_path):
+    """Test OllamaProvider uses custom base_url from config."""
+    # Create a temporary providers.json with custom URL
+    config_file = tmp_path / "providers.json"
+    config_file.write_text("""
+{
+  "ollama": {
+    "base_url": "http://custom-ollama:11434",
+    "default_model": "custom-model",
+    "models": {}
+  }
+}
+""")
+    monkeypatch.setenv("KEEL_PROVIDERS_CONFIG", str(config_file))
+    monkeypatch.delenv("KEEL_OLLAMA_URL", raising=False)
 
-    # Check structure
-    for _provider, models in COST_TABLE.items():
-        assert isinstance(models, dict)
-        for _model, cost in models.items():
-            assert "input" in cost
-            assert "output" in cost
+    provider = OllamaProvider()
+    assert provider.base_url == "http://custom-ollama:11434"
+    assert provider.model == "custom-model"
+
+
+def test_openai_provider_custom_base_url(monkeypatch, tmp_path):
+    """Test OpenAIProvider uses custom base_url from config."""
+    config_file = tmp_path / "providers.json"
+    config_file.write_text("""
+{
+  "openai": {
+    "base_url": "https://custom.openai.com/v1",
+    "default_model": "custom-gpt",
+    "models": {
+      "custom-gpt": {"input": 1.0, "output": 2.0}
+    }
+  }
+}
+""")
+    monkeypatch.setenv("KEEL_PROVIDERS_CONFIG", str(config_file))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("KEEL_OPENAI_BASE_URL", raising=False)
+
+    provider = OpenAIProvider()
+    assert provider.base_url == "https://custom.openai.com/v1"
+    assert provider.model == "custom-gpt"
+
+
+def test_anthropic_provider_custom_base_url(monkeypatch, tmp_path):
+    """Test AnthropicProvider uses custom base_url from config."""
+    config_file = tmp_path / "providers.json"
+    config_file.write_text("""
+{
+  "anthropic": {
+    "base_url": "https://custom.anthropic.com/v1",
+    "default_model": "custom-claude",
+    "models": {
+      "custom-claude": {"input": 1.0, "output": 2.0}
+    }
+  }
+}
+""")
+    monkeypatch.setenv("KEEL_PROVIDERS_CONFIG", str(config_file))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.delenv("KEEL_ANTHROPIC_BASE_URL", raising=False)
+
+    provider = AnthropicProvider()
+    assert provider.base_url == "https://custom.anthropic.com/v1"
+    assert provider.model == "custom-claude"
+
+
+def test_env_override_precedence(monkeypatch, tmp_path):
+    """Test env var takes precedence over config file."""
+    config_file = tmp_path / "providers.json"
+    config_file.write_text("""
+{
+  "ollama": {
+    "base_url": "http://config-ollama:11434",
+    "default_model": "config-model",
+    "models": {}
+  }
+}
+""")
+    monkeypatch.setenv("KEEL_PROVIDERS_CONFIG", str(config_file))
+    monkeypatch.setenv("KEEL_OLLAMA_URL", "http://env-ollama:11434")
+
+    provider = OllamaProvider()
+    # Env should win
+    assert provider.base_url == "http://env-ollama:11434"
+
+
+def test_openai_custom_pricing(monkeypatch, tmp_path):
+    """Test custom pricing from config file."""
+    config_file = tmp_path / "providers.json"
+    config_file.write_text("""
+{
+  "openai": {
+    "base_url": "https://api.openai.com/v1",
+    "default_model": "custom-model",
+    "models": {
+      "custom-model": {"input": 10.0, "output": 20.0}
+    }
+  }
+}
+""")
+    monkeypatch.setenv("KEEL_PROVIDERS_CONFIG", str(config_file))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    provider = OpenAIProvider(model="custom-model")
+    # 1000 tokens in, 500 tokens out = (1000/1M)*10 + (500/1M)*20 = 0.01 + 0.01 = 0.02
+    cost = provider._calculate_cost(1000, 500)
+    assert cost == 0.02
+
+
+def test_anthropic_custom_pricing(monkeypatch, tmp_path):
+    """Test custom pricing from config file."""
+    config_file = tmp_path / "providers.json"
+    config_file.write_text("""
+{
+  "anthropic": {
+    "base_url": "https://api.anthropic.com/v1",
+    "default_model": "custom-model",
+    "models": {
+      "custom-model": {"input": 5.0, "output": 15.0}
+    }
+  }
+}
+""")
+    monkeypatch.setenv("KEEL_PROVIDERS_CONFIG", str(config_file))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    provider = AnthropicProvider(model="custom-model")
+    # 1000 tokens in, 500 tokens out = (1000/1M)*5 + (500/1M)*15 = 0.005 + 0.0075 = 0.0125
+    cost = provider._calculate_cost(1000, 500)
+    assert cost == 0.0125
+
+
+def test_unknown_model_cost_zero(monkeypatch, tmp_path, caplog):
+    """Test unknown model returns 0.0 cost with warning."""
+    config_file = tmp_path / "providers.json"
+    config_file.write_text("""
+{
+  "openai": {
+    "base_url": "https://api.openai.com/v1",
+    "default_model": "gpt-4o-mini",
+    "models": {
+      "gpt-4o-mini": {"input": 0.15, "output": 0.6}
+    }
+  }
+}
+""")
+    monkeypatch.setenv("KEEL_PROVIDERS_CONFIG", str(config_file))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    provider = OpenAIProvider(model="unknown-model")
+    cost = provider._calculate_cost(1000, 500)
+    assert cost == 0.0
+    # Check warning was logged
+    assert "Unknown model" in caplog.text
+
+
+def test_load_providers_config(tmp_path):
+    """Test loading providers config."""
+    config_file = tmp_path / "providers.json"
+    config_file.write_text("""
+{
+  "openai": {
+    "base_url": "https://api.openai.com/v1",
+    "default_model": "gpt-4o-mini",
+    "models": {}
+  }
+}
+""")
+    config = load_providers_config(config_file)
+    assert "openai" in config
+    assert config["openai"]["base_url"] == "https://api.openai.com/v1"
+
+
+def test_load_providers_config_missing_file(tmp_path):
+    """Test ConfigError on missing file."""
+    missing_file = tmp_path / "missing.json"
+    with pytest.raises(ConfigError) as exc_info:
+        load_providers_config(missing_file)
+    assert "not found" in str(exc_info.value)
+
+
+def test_load_providers_config_invalid_json(tmp_path):
+    """Test ConfigError on invalid JSON."""
+    invalid_file = tmp_path / "invalid.json"
+    invalid_file.write_text("{ invalid json }")
+    with pytest.raises(ConfigError) as exc_info:
+        load_providers_config(invalid_file)
+    assert "Invalid JSON" in str(exc_info.value)
 
 
 def test_usage_dataclass():
@@ -178,10 +354,10 @@ def test_openai_provider_mocked(mock_urlopen, monkeypatch):
 
     mock_response = MagicMock()
     mock_response.read.return_value = (
-            b'{"choices": [{"message": {"content": "Hello from OpenAI", '
-            b'"tool_calls": null}}], "usage": {"prompt_tokens": 10, '
-            b'"completion_tokens": 5}}'
-        )
+        b'{"choices": [{"message": {"content": "Hello from OpenAI", '
+        b'"tool_calls": null}}], "usage": {"prompt_tokens": 10, '
+        b'"completion_tokens": 5}}'
+    )
     mock_response.__enter__ = MagicMock(return_value=mock_response)
     mock_response.__exit__ = MagicMock(return_value=None)
     mock_urlopen.return_value = mock_response
@@ -202,9 +378,9 @@ def test_anthropic_provider_mocked(mock_urlopen, monkeypatch):
 
     mock_response = MagicMock()
     mock_response.read.return_value = (
-            b'{"content": [{"type": "text", "text": "Hello from Anthropic"}]'
-            b', "usage": {"input_tokens": 10, "output_tokens": 5}}'
-        )
+        b'{"content": [{"type": "text", "text": "Hello from Anthropic"}]'
+        b', "usage": {"input_tokens": 10, "output_tokens": 5}}'
+    )
     mock_response.__enter__ = MagicMock(return_value=mock_response)
     mock_response.__exit__ = MagicMock(return_value=None)
     mock_urlopen.return_value = mock_response

@@ -6,7 +6,7 @@ Registry: {"mock","ollama","openai","anthropic"}
 MockProvider: deterministic scripted responses from YAML
 OllamaProvider: stdlib urllib POST to http://ollama:11434/api/chat (no SDK)
 OpenAI/Anthropic: raise ProviderNotConfigured unless env key present; stdlib urllib
-Cost table per provider/model.
+Cost table loaded from config/providers.json (env override KEEL_PROVIDERS_CONFIG).
 """
 
 import json
@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+from keel.config import ConfigError, load_providers_config
 
 
 @dataclass
@@ -69,6 +71,16 @@ class Provider(ABC):
         pass
 
 
+def _load_provider_config(provider_name: str) -> dict:
+    """Load config for a specific provider from providers.json."""
+    try:
+        config = load_providers_config()
+        return config.get(provider_name, {})
+    except ConfigError:
+        # Return empty config if file not found - providers will use defaults/env
+        return {}
+
+
 class MockProvider(Provider):
     """Deterministic mock provider for testing."""
 
@@ -110,9 +122,15 @@ class MockProvider(Provider):
 class OllamaProvider(Provider):
     """Ollama provider using stdlib urllib."""
 
-    def __init__(self, base_url: str | None = None):
-        self.base_url = base_url or os.getenv("KEEL_OLLAMA_URL", "http://ollama:11434")
-        self.model = os.getenv("KEEL_OLLAMA_MODEL", "llama3.1:8b")
+    def __init__(self, base_url: str | None = None, model: str | None = None):
+        config = _load_provider_config("ollama")
+        self.base_url = (
+            base_url
+            or os.getenv("KEEL_OLLAMA_URL")
+            or config.get("base_url", "http://ollama:11434")
+        )
+        self.model = model or os.getenv("KEEL_OLLAMA_MODEL") or config.get("default_model", "llama3.1:8b")
+        self._cost_table = config.get("models", {})
 
     def complete(
         self,
@@ -156,12 +174,27 @@ class OllamaProvider(Provider):
 class OpenAIProvider(Provider):
     """OpenAI provider using stdlib urllib."""
 
-    def __init__(self, api_key: str | None = None, model: str | None = None):
+    def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise ProviderNotConfigured("OPENAI_API_KEY not set")
-        self.model = model or os.getenv("KEEL_OPENAI_MODEL", "gpt-4o-mini")
-        self.base_url = "https://api.openai.com/v1"
+
+        config = _load_provider_config("openai")
+        self.model = model or os.getenv("KEEL_OPENAI_MODEL") or config.get("default_model", "gpt-4o-mini")
+        self.base_url = base_url or os.getenv("KEEL_OPENAI_BASE_URL") or config.get("base_url", "https://api.openai.com/v1")
+        self._cost_table = config.get("models", {})
+
+    def _calculate_cost(self, tokens_in: int, tokens_out: int) -> float:
+        """Calculate cost based on model pricing from config."""
+        pricing = self._cost_table.get(self.model, {})
+        if not pricing:
+            # Unknown model - warn but don't crash
+            import warnings
+            warnings.warn(f"Unknown model '{self.model}' in cost table, cost will be 0.0")
+            return 0.0
+        input_cost = pricing.get("input", 0.0)
+        output_cost = pricing.get("output", 0.0)
+        return (tokens_in / 1_000_000) * input_cost + (tokens_out / 1_000_000) * output_cost
 
     def complete(
         self,
@@ -210,23 +243,31 @@ class OpenAIProvider(Provider):
             usage=Usage(tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost),
         )
 
-    def _calculate_cost(self, tokens_in: int, tokens_out: int) -> float:
-        """Calculate cost based on model pricing."""
-        pricing = COST_TABLE.get("openai", {}).get(self.model, {})
-        input_cost = pricing.get("input", 0.0)
-        output_cost = pricing.get("output", 0.0)
-        return (tokens_in / 1_000_000) * input_cost + (tokens_out / 1_000_000) * output_cost
-
 
 class AnthropicProvider(Provider):
     """Anthropic provider using stdlib urllib."""
 
-    def __init__(self, api_key: str | None = None, model: str | None = None):
+    def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
             raise ProviderNotConfigured("ANTHROPIC_API_KEY not set")
-        self.model = model or os.getenv("KEEL_ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
-        self.base_url = "https://api.anthropic.com/v1"
+
+        config = _load_provider_config("anthropic")
+        self.model = model or os.getenv("KEEL_ANTHROPIC_MODEL") or config.get("default_model", "claude-3-5-sonnet-20241022")
+        self.base_url = base_url or os.getenv("KEEL_ANTHROPIC_BASE_URL") or config.get("base_url", "https://api.anthropic.com/v1")
+        self._cost_table = config.get("models", {})
+
+    def _calculate_cost(self, tokens_in: int, tokens_out: int) -> float:
+        """Calculate cost based on model pricing from config."""
+        pricing = self._cost_table.get(self.model, {})
+        if not pricing:
+            # Unknown model - warn but don't crash
+            import warnings
+            warnings.warn(f"Unknown model '{self.model}' in cost table, cost will be 0.0")
+            return 0.0
+        input_cost = pricing.get("input", 0.0)
+        output_cost = pricing.get("output", 0.0)
+        return (tokens_in / 1_000_000) * input_cost + (tokens_out / 1_000_000) * output_cost
 
     def complete(
         self,
@@ -289,34 +330,6 @@ class AnthropicProvider(Provider):
             usage=Usage(tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost),
         )
 
-    def _calculate_cost(self, tokens_in: int, tokens_out: int) -> float:
-        """Calculate cost based on model pricing."""
-        pricing = COST_TABLE.get("anthropic", {}).get(self.model, {})
-        input_cost = pricing.get("input", 0.0)
-        output_cost = pricing.get("output", 0.0)
-        return (tokens_in / 1_000_000) * input_cost + (tokens_out / 1_000_000) * output_cost
-
-
-# Cost table per provider/model (USD per 1M tokens)
-COST_TABLE = {
-    "mock": {
-        "mock-1": {"input": 0.0, "output": 0.0},
-    },
-    "ollama": {
-        "llama3.1:8b": {"input": 0.0, "output": 0.0},
-    },
-    "openai": {
-        "gpt-4o": {"input": 5.0, "output": 15.0},
-        "gpt-4o-mini": {"input": 0.15, "output": 0.6},
-        "gpt-4-turbo": {"input": 10.0, "output": 30.0},
-        "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
-    },
-    "anthropic": {
-        "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},
-        "claude-3-5-haiku-20241022": {"input": 0.8, "output": 4.0},
-        "claude-3-opus-20240229": {"input": 15.0, "output": 75.0},
-    },
-}
 
 # Provider registry
 PROVIDER_REGISTRY = {
@@ -347,5 +360,4 @@ __all__ = [
     "ScriptExhausted",
     "get_provider",
     "PROVIDER_REGISTRY",
-    "COST_TABLE",
 ]
