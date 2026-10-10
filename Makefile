@@ -14,7 +14,9 @@ lint:
 	docker compose run --rm -e PYTHONPATH=/workspace keel-dev ruff check .
 
 demo:
-	@echo "demo target not yet implemented (Phase 6)"
+	docker compose run --rm -e PYTHONPATH=/workspace keel-dev keel run triage "Server alert: disk at 90 percent"
+	docker compose run --rm -e PYTHONPATH=/workspace keel-dev keel queue
+	docker compose run --rm -e PYTHONPATH=/workspace keel-dev keel eval --gate
 
 inject:
 	@echo "inject target not yet implemented (Phase 2)"

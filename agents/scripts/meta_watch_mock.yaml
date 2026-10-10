@@ -1,0 +1,6 @@
+- content: "Scanning runlogs for drift..."
+  tool_calls:
+    - name: "db"
+      arguments: {"action": "read", "key": "last_triage"}
+- content: "Drift scan complete."
+  tool_calls: []

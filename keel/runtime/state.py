@@ -157,8 +157,13 @@ class RunState:
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
-    """Initialize the database with WAL mode and create the runs table."""
-    conn = sqlite3.connect(str(db_path))
+    """Initialize the database with WAL mode and create the runs table.
+
+    check_same_thread=False: the MCP server dispatches tool calls on a
+    worker thread; keel is single-writer (ADR-001) so cross-thread access
+    is serialized by design.
+    """
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
 

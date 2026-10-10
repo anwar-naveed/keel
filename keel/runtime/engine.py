@@ -54,6 +54,7 @@ class Engine:
         """
         settings = load_settings()
         self.data_dir = data_dir or settings.data_dir
+        self.data_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.data_dir / "keel.db"
         self.conn = init_db(self.db_path)
         self.queue = Queue(self.conn)
@@ -103,7 +104,36 @@ class Engine:
         return repaired
 
     def _load_agent_config(self, agent_name: str) -> dict:
-        """Hand-load agents/<name>.yaml (Phase 4 replaces with inventory loader)."""
+        """Load agent config via the inventory loader (P4.1).
+
+        Falls back to the interim hand-load ONLY when the inventory dir is
+        absent (tests inject configs by monkeypatching this method anyway).
+        """
+        from keel.inventory.loader import InventoryError, load_agent
+
+        candidates = [
+            self.data_dir.parent / "agents",
+            Path("agents"),
+        ]
+        for inv_dir in candidates:
+            if not (inv_dir / f"{agent_name}.yaml").exists():
+                continue
+            try:
+                spec = load_agent(inv_dir, agent_name)
+            except InventoryError:
+                continue
+            return {
+                "name": spec.name,
+                "tier": spec.tier,
+                "provider": spec.provider,
+                "model": spec.model,
+                "script": spec.script,
+                "system_prompt": spec.system_prompt,
+                "tools": spec.tools,
+                "max_turns": spec.max_turns,
+                "max_cost_usd": spec.max_cost_usd,
+            }
+        # interim fallback: bare hand-load without inventory validation
         agent_file = self.data_dir.parent / "agents" / f"{agent_name}.yaml"
         if not agent_file.exists():
             agent_file = Path("agents") / f"{agent_name}.yaml"

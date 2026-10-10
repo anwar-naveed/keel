@@ -291,9 +291,11 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
-    """Start MCP server (Phase 2 stub)."""
-    logger.info("MCP server not implemented in Phase 1")
-    return 1
+    """Start the FastMCP stdio server."""
+    from keel.mcp.server import main as mcp_main
+
+    mcp_main()
+    return 0
 
 
 def main() -> int:

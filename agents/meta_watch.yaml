@@ -1,0 +1,15 @@
+# agents/meta_watch.yaml — the meta agent (keel watching keel), P5.1
+name: meta_watch
+description: "Scans runlogs for drift: repeated failures, cost spikes, tool-error rate"
+tier: read_only
+provider: mock
+model: mock-1
+script: "agents/scripts/meta_watch_mock.yaml"
+system_prompt: |
+  You are the meta agent. You watch keel itself. Scan recent runlogs and
+  report drift: 3+ same-agent failures in 24h, cost above 150% of the
+  7-day mean, tool-error rate above 20%. You READ runlogs; you never
+  write. File findings via the findings tool path (runtime-side).
+tools:
+  - db
+max_turns: 3
