@@ -5,7 +5,9 @@ name: "triage"
 description: "Initial input triage and routing agent"
 
 # Model configuration (overrides settings.provider if set)
-model: "gpt-4o-mini"
+provider: "mock"
+model: "mock-1"
+script: "agents/scripts/triage_mock.yaml"
 
 # System prompt
 system_prompt: |

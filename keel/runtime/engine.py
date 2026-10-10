@@ -8,6 +8,8 @@ runlog everything.
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from keel.config import load_settings
 from keel.runtime.journal import Journal, JournalOp, apply_op
 from keel.runtime.providers import (
@@ -54,13 +56,47 @@ class Engine:
         self.journal = Journal(self.conn)
         self.provider: Provider | None = None
 
+    def _load_agent_config(self, agent_name: str) -> dict:
+        """Hand-load agents/<name>.yaml (Phase 4 replaces with inventory loader)."""
+        agent_file = self.data_dir.parent / "agents" / f"{agent_name}.yaml"
+        if not agent_file.exists():
+            agent_file = Path("agents") / f"{agent_name}.yaml"
+        if not agent_file.exists():
+            return {}
+        with open(agent_file) as f:
+            return yaml.safe_load(f) or {}
+
     def _get_provider(self, agent_name: str) -> Provider:
-        """Get provider for an agent (placeholder - Phase 2 will load from inventory)."""
-        # Phase 1: use configured provider from settings
-        if self.provider is None:
-            settings = load_settings()
-            self.provider = get_provider(settings.provider)
-        return self.provider
+        """Get provider for an agent, wired from the agent YAML when present."""
+        # Explicit override (tests / dependency injection) always wins
+        if self.provider is not None:
+            return self.provider
+        agent_cfg = self._load_agent_config(agent_name)
+        provider_name = agent_cfg.get("provider") or load_settings().provider
+
+        if provider_name == "mock":
+            script_path = agent_cfg.get("script")
+            if script_path:
+                return get_provider("mock", script_path=script_path)
+            # no script configured: single acknowledge step so mock runs complete
+            return get_provider(
+                "mock",
+                script_path=self._write_default_script(agent_name),
+            )
+        return get_provider(provider_name)
+
+    def _write_default_script(self, agent_name: str) -> Path:
+        """Write a minimal one-step mock script for agents without one."""
+        script_dir = self.data_dir / "mock_scripts"
+        script_dir.mkdir(parents=True, exist_ok=True)
+        script_file = script_dir / f"{agent_name}.yaml"
+        if not script_file.exists():
+            body = (
+                f"- content: \"Acknowledged by {agent_name}.\"\n"
+                "  tool_calls: []\n"
+            )
+            script_file.write_text(body)
+        return script_file
 
     def _build_tool_set(self, run_id: str) -> list[dict]:
         """Build the tool set for the provider (Phase 1 stub: single KV db tool)."""
@@ -190,8 +226,12 @@ class Engine:
         # Get provider
         provider = self._get_provider(agent)
 
-        # Get system prompt (Phase 1: hardcoded placeholder)
-        system_prompt = f"You are {agent}. Process the input and use tools as needed."
+        # System prompt: from the agent YAML, else a generic fallback
+        agent_cfg = self._load_agent_config(agent)
+        system_prompt = (
+            agent_cfg.get("system_prompt")
+            or f"You are {agent}. Process the input and use tools as needed."
+        )
 
         # Build messages from payload
         messages = [{"role": "user", "content": payload.get("input", "")}]

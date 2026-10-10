@@ -1,0 +1,5 @@
+# Mock script for triage agent (Phase 1)
+- content: "Triage complete: incident logged and classified."
+  tool_calls:
+    - name: "db"
+      arguments: {"action": "write", "key": "last_triage", "value": "classified"}
