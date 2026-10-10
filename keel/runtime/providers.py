@@ -207,7 +207,11 @@ class OpenAIProvider(Provider):
         if not pricing:
             # Unknown model - warn but don't crash
             import warnings
-            warnings.warn(f"Unknown model '{self.model}' in cost table, cost will be 0.0")
+
+            warnings.warn(
+                f"Unknown model '{self.model}' in cost table, cost will be 0.0",
+                stacklevel=2,
+            )
             return 0.0
         input_cost = pricing.get("input", 0.0)
         output_cost = pricing.get("output", 0.0)
@@ -295,7 +299,11 @@ class AnthropicProvider(Provider):
         if not pricing:
             # Unknown model - warn but don't crash
             import warnings
-            warnings.warn(f"Unknown model '{self.model}' in cost table, cost will be 0.0")
+
+            warnings.warn(
+                f"Unknown model '{self.model}' in cost table, cost will be 0.0",
+                stacklevel=2,
+            )
             return 0.0
         input_cost = pricing.get("input", 0.0)
         output_cost = pricing.get("output", 0.0)
