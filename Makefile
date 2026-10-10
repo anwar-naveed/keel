@@ -19,7 +19,7 @@ demo:
 	docker compose run --rm -e PYTHONPATH=/workspace keel-dev keel eval --gate
 
 inject:
-	@echo "inject target not yet implemented (Phase 2)"
+	docker compose run --rm -e PYTHONPATH=/workspace keel-dev pytest tests/test_capabilities.py::test_injection_cannot_write -q
 
 eval:
 	docker compose run --rm -e PYTHONPATH=/workspace keel-dev keel eval --gate
