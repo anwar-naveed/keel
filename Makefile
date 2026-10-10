@@ -1,5 +1,7 @@
 # Makefile for keel
-# All commands run inside the Docker container to maintain host hygiene
+# Container contract: the image is built by GitHub Actions and pulled
+# from Docker Hub (see .github/workflows/build-image.yml). NEVER build
+# locally. All test/lint commands run inside the pulled container.
 
 .PHONY: test lint demo inject eval clean
 
