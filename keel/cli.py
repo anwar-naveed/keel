@@ -1,14 +1,18 @@
 """CLI entry point for keel."""
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 from keel.config import load_settings
 from keel.runtime.engine import Engine
-from keel.runtime.queue import Queue
 from keel.runtime.runlog import reconstruct
 from keel.runtime.state import RunState, init_db
+
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -116,7 +120,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Run an agent."""
     engine = _get_engine()
     run = engine.run_agent(args.agent, args.input)
-    print(f"Run {run.run_id} completed with status: {run.status.value}")
+    logger.info("Run %s completed with status: %s", run.run_id, run.status.value)
     if run.status.value == "failed":
         return 1
     return 0
@@ -127,28 +131,33 @@ def cmd_show(args: argparse.Namespace) -> int:
     engine = _get_engine()
     run_id = args.run_id or _get_latest_run_id(engine.data_dir)
     if run_id is None:
-        print("No runs found", file=sys.stderr)
+        logger.error("No runs found")
         return 1
 
     run = RunState.load(engine.conn, run_id)
     if run is None:
-        print(f"Run {run_id} not found", file=sys.stderr)
+        logger.error("Run %s not found", run_id)
         return 1
 
-    print(f"Run ID: {run.run_id}")
-    print(f"Agent: {run.agent}")
-    print(f"Status: {run.status.value}")
-    print(f"Phase: {run.phase}")
-    print(f"Created: {run.created_at}")
-    print(f"Updated: {run.updated_at}")
-    print(f"Payload: {run.payload}")
+    logger.info("Run ID: %s", run.run_id)
+    logger.info("Agent: %s", run.agent)
+    logger.info("Status: %s", run.status.value)
+    logger.info("Phase: %s", run.phase)
+    logger.info("Created: %s", run.created_at)
+    logger.info("Updated: %s", run.updated_at)
+    logger.info("Payload: %s", run.payload)
 
     # Show runlog events
     events = reconstruct(engine.data_dir, run_id)
     if events:
-        print("\n--- Events ---")
+        logger.info("\n--- Events ---")
         for event in events:
-            print(f"  [{event.timestamp.isoformat()}] {event.type}: {event.payload}")
+            logger.info(
+                "  [%s] %s: %s",
+                event.timestamp.isoformat(),
+                event.type,
+                event.payload,
+            )
 
     return 0
 
@@ -160,58 +169,58 @@ def cmd_queue(args: argparse.Namespace) -> int:
 
     # Get pending
     pending = queue.get_pending()
-    print(f"Pending: {len(pending)}")
+    logger.info("Pending: %d", len(pending))
     for entry in pending:
-        print(f"  {entry.run_id} - {entry.agent} - {entry.status.value}")
+        logger.info("  %s - %s - %s", entry.run_id, entry.agent, entry.status.value)
 
     # Get claimed
     claimed = queue.get_claimed()
-    print(f"Claimed: {len(claimed)}")
+    logger.info("Claimed: %d", len(claimed))
     for entry in claimed:
-        print(f"  {entry.run_id} - {entry.agent} - {entry.status.value}")
+        logger.info("  %s - %s - %s", entry.run_id, entry.agent, entry.status.value)
 
     return 0
 
 
 def cmd_approve(args: argparse.Namespace) -> int:
     """Approve a staged run (Phase 2 stub)."""
-    print(f"Approve not implemented in Phase 1: {args.run_id}")
+    logger.info("Approve not implemented in Phase 1: %s", args.run_id)
     return 1
 
 
 def cmd_reject(args: argparse.Namespace) -> int:
     """Reject a staged run (Phase 2 stub)."""
-    print(f"Reject not implemented in Phase 1: {args.run_id}")
+    logger.info("Reject not implemented in Phase 1: %s", args.run_id)
     return 1
 
 
 def cmd_rollback(args: argparse.Namespace) -> int:
     """Rollback a run (Phase 2 stub)."""
-    print(f"Rollback not implemented in Phase 1: {args.run_id}")
+    logger.info("Rollback not implemented in Phase 1: %s", args.run_id)
     return 1
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
     """Run evaluations (Phase 2 stub)."""
-    print("Eval not implemented in Phase 1")
+    logger.info("Eval not implemented in Phase 1")
     return 1
 
 
 def cmd_cost(args: argparse.Namespace) -> int:
     """Show cost report (Phase 2 stub)."""
-    print("Cost report not implemented in Phase 1")
+    logger.info("Cost report not implemented in Phase 1")
     return 1
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
     """Audit operations (Phase 2 stub)."""
-    print("Audit not implemented in Phase 1")
+    logger.info("Audit not implemented in Phase 1")
     return 1
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
     """Start MCP server (Phase 2 stub)."""
-    print("MCP server not implemented in Phase 1")
+    logger.info("MCP server not implemented in Phase 1")
     return 1
 
 
