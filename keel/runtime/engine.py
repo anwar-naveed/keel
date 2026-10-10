@@ -5,7 +5,6 @@ execute tool calls → journal writes → state transitions → gate check →
 runlog everything.
 """
 
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
